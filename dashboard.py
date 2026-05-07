@@ -1,0 +1,258 @@
+import streamlit as st
+import pandas as pd
+import matplotlib.pyplot as plt
+
+st.set_page_config(
+    page_title="Fire/EMS Operational Performance Dashboard",
+    layout="wide"
+)
+
+st.title("🚒 Fire/EMS Operational Performance Dashboard")
+
+# =====================================================
+# FILE PATHS
+# =====================================================
+call_log_file = r"C:\Users\mike5\Desktop\Board Reports\April\April CallLog.csv"
+monthly_file = r"C:\Users\mike5\Desktop\Board Reports\April\MonthlyIncidentNumbersApril.csv"
+overlap_file = r"C:\Users\mike5\Desktop\Board Reports\April\Overlapping Incidents April 2026.xlsx"
+
+
+# =====================================================
+# LOAD DATA
+# =====================================================
+calllog = pd.read_csv(call_log_file)
+monthly = pd.read_csv(monthly_file)
+
+overlap_df = pd.read_excel(
+    overlap_file,
+    sheet_name="Fire Incidents",
+    header=8
+)
+
+calllog.columns = calllog.columns.str.strip()
+monthly.columns = monthly.columns.str.strip()
+overlap_df.columns = overlap_df.columns.str.strip()
+
+overlap_df["Overlapping"] = pd.to_numeric(
+    overlap_df["Overlapping"],
+    errors="coerce"
+).fillna(0)
+
+# =====================================================
+# CLEAN DATA
+# =====================================================
+incident_col = "Core incident number"
+station_col = "Station"
+
+calllog[incident_col] = calllog[incident_col].astype(str).str.strip()
+monthly[incident_col] = monthly[incident_col].astype(str).str.strip()
+
+calllog[station_col] = calllog[station_col].astype(str).str.strip()
+monthly[station_col] = monthly[station_col].astype(str).str.strip()
+
+# =====================================================
+# STATION FILTER
+# =====================================================
+stations = sorted(monthly[station_col].dropna().unique())
+
+selected_station = st.selectbox(
+    "Select Station",
+    ["All"] + list(stations)
+)
+
+if selected_station != "All":
+    calllog_filtered = calllog[calllog[station_col] == selected_station].copy()
+    monthly_filtered = monthly[monthly[station_col] == selected_station].copy()
+else:
+    calllog_filtered = calllog.copy()
+    monthly_filtered = monthly.copy()
+
+# =====================================================
+# MISSING / INSUFFICIENT DATA
+# =====================================================
+missing_calls = monthly_filtered[
+    ~monthly_filtered[incident_col].isin(calllog_filtered[incident_col])
+].copy()
+
+# Convert response time to numeric
+calllog_filtered["Unit response time"] = pd.to_numeric(
+    calllog_filtered["Unit response time"],
+    errors="coerce"
+)
+
+# Delayed responses (>480 sec)
+delayed_calls = calllog_filtered[
+    calllog_filtered["Unit response time"] > 480
+].shape[0]
+
+# =====================================================
+# KPI SECTION
+# =====================================================
+
+# System stress calls
+stress_calls = overlap_df[overlap_df["Overlapping"] >= 2].shape[0]
+
+# Convert response time to numeric
+calllog_filtered["Unit response time"] = pd.to_numeric(
+    calllog_filtered["Unit response time"],
+    errors="coerce"
+)
+
+# Delayed responses
+delayed_calls = calllog_filtered[
+    calllog_filtered["Unit response time"] > 480
+].shape[0]
+
+col1, col2, col3, col4, col5 = st.columns(5)
+
+col1.metric(
+    "Total Calls",
+    monthly_filtered[incident_col].nunique()
+)
+
+col2.metric(
+    "Analyzed Calls",
+    calllog_filtered[incident_col].nunique()
+)
+
+col3.metric(
+    "Missing / Insufficient Data",
+    missing_calls[incident_col].nunique()
+)
+
+col4.metric(
+    "System Stress Calls",
+    stress_calls
+)
+
+col5.metric(
+    "Delayed Responses (>480s)",
+    delayed_calls
+)
+
+st.markdown("---")
+
+# =====================================================
+# CALLS BY HOUR
+# =====================================================
+calllog_filtered["Call DateTime"] = pd.to_datetime(
+    calllog_filtered["Date"].astype(str) + " " + calllog_filtered["Time"].astype(str),
+    errors="coerce"
+)
+
+calllog_filtered["Hour"] = calllog_filtered["Call DateTime"].dt.hour
+
+calls_by_hour = (
+    calllog_filtered
+    .dropna(subset=["Hour"])
+    .groupby("Hour")[incident_col]
+    .nunique()
+    .reindex(range(24), fill_value=0)
+)
+
+st.subheader("📊 Calls by Hour")
+
+fig, ax = plt.subplots(figsize=(11, 4.5))
+
+# Bars
+ax.bar(calls_by_hour.index, calls_by_hour.values, color="#4FA3FF")
+
+ax.axvspan(14.5, 17.5, color='red', alpha=0.12)
+ax.axvspan(19.5, 20.5, color='orange', alpha=0.12)
+
+ax.text(15.8, 25.7, "Primary Stress Window",
+        color="red",
+        ha="center",
+        fontsize=9)
+
+ax.text(20.2, 25.7, "Secondary Spike",
+        color="orange",
+        ha="center",
+        fontsize=9)
+
+# Titles & labels (FORCE WHITE)
+ax.set_xlabel("Hour of Day", color="white")
+ax.set_ylabel("Call Volume", color="white")
+
+# Axis ticks (MAKE THEM WHITE)
+ax.tick_params(axis='x', colors='white')
+ax.tick_params(axis='y', colors='white')
+
+# Grid
+ax.grid(axis="y", alpha=0.3)
+
+# Background styling (DARK THEME FIX)
+fig.patch.set_facecolor("#0E1117")   # match Streamlit background
+ax.set_facecolor("#0E1117")
+
+# Remove top/right borders
+ax.spines['top'].set_visible(False)
+ax.spines['right'].set_visible(False)
+
+# Make remaining borders subtle
+ax.spines['left'].set_color('white')
+ax.spines['bottom'].set_color('white')
+
+ax.set_xticks(range(0, 24, 2))
+
+st.pyplot(fig)
+
+st.markdown("---")
+
+# =====================================================
+# STATION CALL COUNTS
+# =====================================================
+station_counts = (
+    monthly
+    .groupby(station_col)[incident_col]
+    .nunique()
+    .reset_index()
+)
+
+station_counts.columns = ["Station", "Total Calls"]
+
+missing_by_station = (
+    monthly[
+        ~monthly[incident_col].isin(calllog[incident_col])
+    ]
+    .groupby(station_col)[incident_col]
+    .nunique()
+    .reset_index()
+)
+
+missing_by_station.columns = ["Station", "Insufficient Data Calls"]
+
+station_counts = station_counts.merge(
+    missing_by_station,
+    on="Station",
+    how="left"
+)
+
+station_counts["Insufficient Data Calls"] = (
+    station_counts["Insufficient Data Calls"]
+    .fillna(0)
+    .astype(int)
+)
+
+st.subheader("🏢 Calls by Station")
+
+st.dataframe(
+    station_counts,
+    use_container_width=True,
+    hide_index=True
+)
+
+
+# =====================================================
+# KEY FINDINGS
+# =====================================================
+st.markdown("---")
+
+st.subheader("📊 Key Findings")
+
+st.markdown("""
+- Peak system stress occurs between **1500–1700 hours**
+- Secondary spike observed around **2000 hours**
+- Delayed responses (>480 sec) correlate with **overlapping incidents**
+- **4 calls** were missing from the call log but included in total volume
+""")
