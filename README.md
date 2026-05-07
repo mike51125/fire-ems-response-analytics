@@ -62,13 +62,12 @@ Built a Python-based analytics pipeline that:
 
 ---
 
-## 💣 Key Findings
+## 📊 Key Findings
 
-- Peak system stress occurs between **1500–1700 hours**  
-- Secondary spike observed around **2000 hours**  
-- Delayed responses (>480 sec) correlate with **overlapping incidents**  
-- **4 calls** were missing from the call log but included in total volume  
-
+- Peak system stress occurs between **1500–1700 hours**
+- Secondary spike observed around **2000 hours**
+- Delayed responses (>480 sec) correlate with **overlapping incidents**
+- **4 calls** were missing from the call log but included in total volume
 ---
 
 ## ⚙️ Tech Stack
